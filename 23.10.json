@@ -1,0 +1,628 @@
+ Задача 1:
+
+class ClientRouter {
+  constructor(routes) {
+    this.routes = routes;
+    
+    this.handleLinkClick = this.handleLinkClick.bind(this);
+    this.handlePopState = this.handlePopState.bind(this);
+    
+    document.addEventListener('click', this.handleLinkClick);
+    window.addEventListener('popstate', this.handlePopState);
+    
+    this.navigate(window.location.pathname, false);
+  }
+
+  handleLinkClick(event) {
+    const link = event.target.closest('a');
+    
+    if (!link || 
+        !link.href || 
+        link.target === '_blank' || 
+        event.ctrlKey || 
+        event.metaKey ||
+        event.shiftKey ||
+        event.altKey) {
+      return;
+    }
+
+    const url = new URL(link.href);
+    
+    if (url.origin !== window.location.origin) {
+      return;
+    }
+
+    event.preventDefault();
+    this.navigate(url.pathname, true);
+  }
+
+  handlePopState(event) {
+    this.navigate(window.location.pathname, false);
+  }
+
+  navigate(path, pushState = true) {
+    if (pushState) {
+      window.history.pushState({}, '', path);
+    }
+
+    const handler = this.routes[path];
+    
+    if (handler) {
+      const htmlContent = handler();
+      this.render(htmlContent);
+    } else {
+      this.render(this.routes['/404'] ? this.routes['/404']() : '<h1>404 Not Found</h1>');
+    }
+  }
+
+  render(content) {
+    const app = document.getElementById('app');
+    if (app) {
+      app.innerHTML = content;
+    }
+  }
+
+  destroy() {
+    document.removeEventListener('click', this.handleLinkClick);
+    window.removeEventListener('popstate', this.handlePopState);
+  }
+}
+ 
+задание 2
+
+function createVNode(type, props, ...children) {
+  const processedChildren = children.reduce((acc, child) => {
+    if (child !== null && child !== undefined) {
+      acc.push(child);
+    }
+    return acc;
+  }, []);
+
+  const finalChildren = processedChildren.length === 1 
+    ? processedChildren[0] 
+    : processedChildren;
+
+  return {
+    type,
+    props: {
+      ...props,
+      children: finalChildren,
+    },
+    key: props?.key ?? null,
+  };
+}
+
+задача 3
+function shallowEqual(objA, objB) {
+  if (Object.is(objA, objB)) {
+    return true;
+  }
+
+  if (objA === null || objB === null) {
+    return false;
+  }
+
+  const isObjectA = typeof objA === 'object' && objA !== null && !Array.isArray(objA);
+  const isObjectB = typeof objB === 'object' && objB !== null && !Array.isArray(objB);
+
+  if (!isObjectA || !isObjectB) {
+    return false;
+  }
+
+  const keysA = Object.keys(objA);
+  const keysB = Object.keys(objB);
+
+  if (keysA.length !== keysB.length) {
+    return false;
+  }
+
+  for (let i = 0; i < keysA.length; i++) {
+    const key = keysA[i];
+    
+    if (!Object.prototype.hasOwnProperty.call(objB, key)) {
+      return false;
+    }
+
+    if (!Object.is(objA[key], objB[key])) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+задача 4
+
+function Parent() {
+  let count = 0;
+  const listeners = [];
+
+  function subscribe(callback) {
+    listeners.push(callback);
+    return () => {
+      const index = listeners.indexOf(callback);
+      if (index > -1) listeners.splice(index, 1);
+    };
+  }
+
+  function notify() {
+    listeners.forEach(callback => callback(count));
+  }
+
+  return {
+    getCount() {
+      return count;
+    },
+    increment() {
+      count++;
+      notify();
+    },
+    subscribe,
+  };
+}
+
+function Child(state) {
+  const { count, onIncrement } = state;
+
+  return {
+    render: () => `
+      <div class="child">
+        <p>Count: ${count}</p>
+        <button onclick="onIncrement()">Increment</button>
+      </div>
+    `,
+  };
+}
+
+задача 5
+
+function renderToHTML(vNode) {
+  if (vNode === null || vNode === undefined) {
+    return '';
+  }
+
+  if (typeof vNode !== 'object') {
+    return String(vNode);
+  }
+
+  if (Array.isArray(vNode)) {
+    return vNode.map(renderToHTML).join('');
+  }
+
+  if (!vNode.type) {
+    return String(vNode.props?.children ?? '');
+  }
+
+  const { type, props } = vNode;
+  const { children, className, style, ...attributes } = props;
+
+  let attrsString = '';
+
+  if (className !== undefined) {
+    attrsString += ` class="${className}"`;
+  }
+
+  if (style !== undefined) {
+    if (typeof style === 'object') {
+      const styleString = Object.entries(style)
+        .map(([key, value]) => {
+          const cssKey = key.replace(/([A-Z])/g, '-$1').toLowerCase();
+          return `${cssKey}: ${value}`;
+        })
+        .join('; ');
+      attrsString += ` style="${styleString}"`;
+    } else if (typeof style === 'string') {
+      attrsString += ` style="${style}"`;
+    }
+  }
+
+  Object.entries(attributes).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && key !== 'key') {
+      if (value === true) {
+        attrsString += ` ${key}`;
+      } else if (value === false) {
+        // Не добавляем false атрибуты
+      } else {
+        const escapedValue = String(value)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#039;');
+        attrsString += ` ${key}="${escapedValue}"`;
+      }
+    }
+  });
+
+  const selfClosingTags = ['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr'];
+
+  if (selfClosingTags.includes(type)) {
+    return `<${type}${attrsString}>`;
+  }
+
+  const childrenHTML = children !== undefined
+    ? renderToHTML(children)
+    : '';
+
+  return `<${type}${attrsString}>${childrenHTML}</${type}>`;
+}
+
+задача 6
+const fs = require('fs');
+const path = require('path');
+
+function validateDependencies(filePath = './package.json') {
+  try {
+    const absolutePath = path.resolve(filePath);
+    const content = fs.readFileSync(absolutePath, 'utf-8');
+    const packageJson = JSON.parse(content);
+
+    const dependencies = packageJson.dependencies || {};
+    const devDependencies = packageJson.devDependencies || {};
+
+    const allDependencies = { ...dependencies, ...devDependencies };
+
+    if (Object.keys(allDependencies).length === 0) {
+      console.log('No dependencies found.');
+      return [];
+    }
+
+    const problematicPackages = [];
+
+    for (const [packageName, version] of Object.entries(allDependencies)) {
+      if (typeof version !== 'string') continue;
+      if (version.startsWith('file:') || version.startsWith('npm:') || version.startsWith('git:')) {
+        continue;
+      }
+
+      if (version.startsWith('^') || version.startsWith('~')) {
+        problematicPackages.push({
+          package: packageName,
+          version: version,
+          message: `Range operator found: ${version}`,
+        });
+      }
+    }
+
+    if (problematicPackages.length > 0) {
+      console.log('⚠️  Packages with loose version ranges:');
+      console.log('─'.repeat(50));
+      problematicPackages.forEach(({ package: pkg, version }) => {
+        console.log(`  ${pkg.padEnd(40)} ${version}`);
+      });
+      console.log('─'.repeat(50));
+      console.log(`Total: ${problematicPackages.length} package(s) with non-locked versions`);
+    } else {
+      console.log('✅ All dependencies have pinned versions (no ^ or ~ prefixes)');
+    }
+
+    return problematicPackages;
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      console.error(`Error: package.json not found at ${filePath}`);
+    } else if (error instanceof SyntaxError) {
+      console.error(`Error: Invalid JSON in package.json - ${error.message}`);
+    } else {
+      console.error(`Error: ${error.message}`);
+    }
+    return [];
+  }
+}
+
+if (require.main === module) {
+  validateDependencies();
+}
+
+module.exports = { validateDependencies };
+
+задача 7
+
+function checkEnvironment() {
+  const currentVersion = process.version;
+  const majorVersion = parseInt(currentVersion.slice(1).split('.')[0], 10);
+
+  const MIN_MAJOR_VERSION = 18;
+
+  console.log(`🔍 Node.js version check:`);
+  console.log(`   Current version: ${currentVersion}`);
+  console.log(`   Required minimum: ${MIN_MAJOR_VERSION}.0.0`);
+
+  if (majorVersion < MIN_MAJOR_VERSION) {
+    console.error(`❌ Error: Node.js ${currentVersion} is too old.`);
+    console.error(`   Please upgrade to Node.js ${MIN_MAJOR_VERSION} or higher.`);
+    console.error(`   Visit: https://nodejs.org/`);
+
+    process.exit(1);
+  }
+
+  console.log(`✅ Node.js version is compatible.`);
+  console.log(`   Build can proceed.`);
+}
+
+checkEnvironment();
+
+задача 8
+const packageJsonConfig = {
+  name: "my-project",
+  version: "1.0.0",
+  scripts: {
+    "lint": "eslint src/",
+    "prebuild": "npm run lint",
+    "build": "vite build",
+    "postbuild": "echo \"Build complete! Size:\" && du -sh dist",
+    "prebuild:ci": "npm run lint -- --max-warnings=0"
+  }
+};
+
+задача 9
+
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import path from 'node:path';
+import { fileURLToPath, URL } from 'node:url';
+
+export default defineConfig({
+  plugins: [
+    react(),
+  ],
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
+    },
+  },
+  
+  server: {
+    port: 3000,
+    open: true,
+  },
+  
+  build: {
+    outDir: 'dist',
+    sourcemap: true,
+  },
+});
+
+задача 10
+
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+const { WebSocketServer } = require('ws');
+
+const server = http.createServer((req, res) => {
+  let filePath = req.url === '/' ? './index.html' : '.' + req.url;
+  const ext = path.extname(filePath);
+  const contentTypes = {
+    '.html': 'text/html',
+    '.js': 'application/javascript',
+    '.css': 'text/css',
+    '.json': 'application/json',
+  };
+
+  fs.readFile(filePath, (err, content) => {
+    if (err) {
+      res.writeHead(404);
+      res.end('Not found');
+    } else {
+      res.writeHead(200, { 'Content-Type': contentTypes[ext] || 'text/plain' });
+      res.end(content);
+    }
+  });
+});
+
+const wss = new WebSocketServer({ server });
+
+const watchedFile = path.resolve(__dirname, 'test.js');
+
+wss.on('connection', (ws) => {
+  console.log('📡 Client connected');
+
+  ws.send(JSON.stringify({
+    type: 'connected',
+    message: 'HMR server ready',
+  }));
+
+  ws.on('close', () => {
+    console.log('📡 Client disconnected');
+  });
+});
+
+fs.watch(watchedFile, (eventType, filename) => {
+  console.log(`📝 File changed: ${filename} (${eventType})`);
+
+  const message = JSON.stringify({
+    type: 'reload',
+    timestamp: Date.now(),
+  });
+
+  wss.clients.forEach((client) => {
+    if (client.readyState === 1) {
+      console.log('  → Sending reload to client');
+      client.send(message);
+    }
+  });
+});
+
+const PORT = 3001;
+server.listen(PORT, () => {
+  console.log(`🚀 HMR Server running on http://localhost:${PORT}`);
+  console.log(`📂 Watching: ${watchedFile}`);
+});
+
+process.on('SIGINT', () => {
+  console.log('\n👋 Shutting down HMR server...');
+  wss.close();
+  server.close();
+  process.exit(0);
+});
+задача 11
+
+function deepFreeze(object) {
+  const ownKeys = Object.getOwnPropertyNames(object);
+  
+  ownKeys.forEach((key) => {
+    const value = object[key];
+    
+    if (value && typeof value === 'object') {
+      deepFreeze(value);
+    }
+  });
+
+  return Object.freeze(object);
+}
+задача 12
+
+function createCounter(initialValue = 0, step = 1) {
+  let count = initialValue;
+
+  return {
+    inc() {
+      count += step;
+      return count;
+    },
+    
+    dec() {
+      count -= step;
+      return count;
+    },
+    
+    reset() {
+      count = initialValue;
+      return count;
+    },
+    
+    get() {
+      return count;
+    },
+  };
+}
+задача 13
+
+function memoize(fn) {
+  const cache = new Map();
+
+  return function (...args) {
+    const key = JSON.stringify(args);
+
+    if (cache.has(key)) {
+      console.log(`[memoize] Cache hit for ${key}`);
+      return cache.get(key);
+    }
+
+    console.log(`[memoize] Computing for ${key}`);
+    const result = fn.apply(this, args);
+
+    cache.set(key, result);
+
+    return result;
+  };
+}
+задача 14
+
+function createValidator(ruleName, param) {
+  return function validate(input) {
+    switch (ruleName) {
+      case 'minLength':
+        return {
+          isValid: input.length >= param,
+          message: input.length >= param 
+            ? '' 
+            : `Must be at least ${param} characters`,
+        };
+
+      case 'maxLength':
+        return {
+          isValid: input.length <= param,
+          message: input.length <= param 
+            ? '' 
+            : `Must be no more than ${param} characters`,
+        };
+
+      case 'pattern':
+        return {
+          isValid: param.test(input),
+          message: param.test(input) 
+            ? '' 
+            : 'Invalid format',
+        };
+
+      case 'email':
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        return {
+          isValid: emailRegex.test(input),
+          message: emailRegex.test(input) 
+            ? '' 
+            : 'Invalid email address',
+        };
+
+      case 'custom':
+        return {
+          isValid: param(input),
+          message: param(input) ? '' : 'Invalid value',
+        };
+
+      default:
+        return {
+          isValid: true,
+          message: '',
+        };
+    }
+  };
+}
+задача 15 
+function getNestedValue(data, fallback = undefined) {
+  return data?.payload?.user?.settings?.theme ?? fallback;
+}
+
+
+const fullData = {
+  payload: {
+    user: {
+      settings: {
+        theme: 'dark'
+      }
+    }
+  }
+};
+console.log(getNestedValue(fullData, 'light')); // 'dark'
+
+const partialData1 = {
+  payload: {
+    user: null
+  }
+};
+console.log(getNestedValue(partialData1, 'light')); // 'light'
+
+const partialData2 = {
+  payload: null
+};
+console.log(getNestedValue(partialData2, 'light')); // 'light'
+
+const emptyData = {};
+console.log(getNestedValue(emptyData, 'light')); // 'light'
+
+console.log(getNestedValue(null, 'light')); // 'light'
+console.log(getNestedValue(undefined, 'light')); // 'light'
+
+const dataWithUndefined = {
+  payload: {
+    user: {
+      settings: {
+        theme: undefined
+      }
+    }
+  }
+};
+console.log(getNestedValue(dataWithUndefined, 'light')); // 'light'
+
+const dataWithZero = {
+  payload: {
+    user: {
+      settings: {
+        count: 0
+      }
+    }
+  }
+};
+console.log(getNestedValue(dataWithZero, 10)); // 0
