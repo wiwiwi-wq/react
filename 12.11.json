@@ -1,0 +1,199 @@
+Задание 1. 
+`pushState` добавляет новую запись в стек истории браузера: текущий URL остаётся в истории, а `/login` кладётся поверх него. `replaceState` заменяет текущую запись, не создавая новую.
+Симптом возникает так: `pushState` кладёт `/login` в историю поверх исходной страницы. При нажатии «Назад» браузер возвращается на предыдущий URL, защита приватного роута снова видит `isAuthenticated === false`, снова выполняет `pushState` на `/login` — и так по кругу. Каждое нажатие «Назад» порождает новую запись, и пользователь не может выйти за пределы редиректа.
+
+function checkAuthAndNavigate(isAuthenticated, currentPath) {
+  if (!isAuthenticated && currentPath !== "/login") {
+    window.history.replaceState({}, "", "/login");
+    renderLoginPage();
+  }
+}
+
+Задание 2. 
+Причина утечки: функция `mountHeader` вызывается при каждом монтировании компонента (переходах между страницами SPA). Каждый вызов регистрирует новый анонимный обработчик `resize`, и ни один из них никогда не удаляется. Каждый обработчик через замыкание удерживает ссылку на свой элемент `header` (а вместе с ним и на поддерево DOM). Обработчики копятся, замыкания не собираются сборщиком мусора — память растёт, при изменении размера окна исполняются десятки устаревших обработчиков.
+
+function mountHeader() {
+  const header = document.getElementById("header");
+
+  const onResize = () => {
+    const isMobile = window.innerWidth < 768;
+    header.className = isMobile ? "header-mobile" : "header-desktop";
+  };
+
+  window.addEventListener("resize", onResize);
+  onResize();
+
+  return function unmountHeader() {
+    window.removeEventListener("resize", onResize);
+  };
+}
+
+const unmount = mountHeader();
+unmount();
+
+Задание 3.
+Обработчик события `click` на ссылке выполняется до стандартного поведения браузера. Код `router.navigate('/cart')` монтирует корзину, но не отменяет действие по умолчанию, поэтому браузер сразу после обработчика выполняет навигацию по `href="/cart"` — отправляет обычный HTTP-запрос, выгружает всё приложение и рендерит страницу с нуля. Отсюда белый экран и сброс состояния.
+
+function ProductCard({ product, router }) {
+  return `
+    <div class="card">
+      <h3>${product.title}</h3>
+      <a href="/cart" onclick="event.preventDefault(); router.navigate('/cart'); return false;">В корзину</a>
+    </div>
+  `;
+}
+
+Задание 4.
+В `dependencies` указывают то, что нужно приложению во время работы (runtime): библиотеки, импортируемые в код. В `devDependencies` — то, что нужно только на этапе разработки и сборки: бандлеры, линтеры, тест-раннеры. Ошибка здесь обратная: `vite` — это инструмент сборки, а не runtime-зависимость, поэтому на сервере, где установлены только `dependencies` (`npm ci --omit=dev`), он отсутствует и сборка падает. Реакт и date-fns наоборот попадают в рантайм и обязаны быть в `dependencies`.
+
+{
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "date-fns": "^3.6.0"
+  },
+  "devDependencies": {
+    "vite": "^5.4.0"
+  }
+}
+
+Задание 5. 
+Диапазон `^5.4.0` разрешает установку любых минорных и патч-версий (от 5.4.0 до <6.0.0). Команда `npm install` при отсутствии lock-файла (или при несовпадении lock-файла с package.json) разрешает диапазоны заново и скачивает самые свежие подходящие версии на момент запуска. В пятницу установилась одна комбинация версий, в понедельник — другая: в минорной версии одной из зависимостей вышло несовместимое изменение, и сборка упала без единого коммита в репозитории.
+
+
+git pull origin main
+npm ci
+npm run build
+
+`npm ci` устанавливает версии строго из `package-lock.json`, игнорирует `node_modules`, работает быстрее и всегда даёт одинаковую сборку. Для этого lock-файл должен быть закоммичен в репозиторий.
+
+Задание 6. 
+node.js и браузер — разные среды исполнения. В Node.js доступны серверные модули (`fs`, `path`, `process`), в браузере их нет: код исполняется в песочнице без доступа к файловой системе. Vite собирает код для браузера, поэтому встроенные модули Node помечаются как externalized, а попытка вызвать `fs.readFileSync` падает с ошибкой.
+
+import { defineConfig } from "vite";
+import { readFileSync } from "node:fs";
+
+const pkg = JSON.parse(readFileSync("./package.json", "utf-8"));
+
+export default defineConfig({
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
+  },
+});
+
+Задание 7. Мутация данных в общем кэше через присвоение ссылки
+Массивы и объекты — ссылочные типы: переменная хранит не сами данные, а адрес объекта в куче (Heap). `filter` создаёт новый массив, но элементы этого массива — те же самые ссылки на объекты из исходного. Поэтому изменение `user.loginAttempts` меняет объект, на который ссылаются оба массива сразу. Мутация видна везде, где этот объект используется.
+
+function resetAttemptsForActiveUsers(usersList) {
+  return usersList
+    .filter((user) => user.isActive)
+    .map((user) => ({ ...user, loginAttempts: 0 }));
+}
+
+Задание 8. 
+Spread создаёт поверхностную копию (Shallow Copy): копируются только поля первого уровня, значения-примитивы копируются по значению, а вложенные объекты и массивы копируются как ссылки. Поэтому `userCopy.security` — это тот же самый объект, что и `userProfile.security`, и `push` в его массиве `roles` меняет оба.
+
+const userCopy = {
+  ...userProfile,
+  security: {
+    ...userProfile.security,
+    roles: [...userProfile.security.roles, "superadmin"],
+  },
+};
+
+Вариант 2. 
+
+const userCopy = structuredClone(userProfile);
+userCopy.security.roles.push("superadmin");
+
+Задание 9. 
+`var` имеет функциональную область видимости: одна переменная `i` существует на весь вызов функции, а не по одной на итерацию. Все замыкания ссылаются на одну и ту же переменную, а не на её копию. К моменту вызова колбэков цикл завершён, `i` стала равна 6 (первое значение, не прошедшее условие), и все функции выводят 6. `let` создаёт новую переменную на каждую итерацию — каждая итерация получает собственное лексическое окружение.
+
+function createPaginationButtons(pagesCount) {
+  const buttons = [];
+
+  for (let i = 1; i <= pagesCount; i++) {
+    buttons.push(() => {
+      console.log(`Переход на страницу: ${i}`);
+    });
+  }
+
+  return buttons;
+}
+
+function createPaginationButtons(pagesCount) {
+  var buttons = [];
+
+  for (var i = 1; i <= pagesCount; i++) {
+    buttons.push(
+      (function (num) {
+        return function () {
+          console.log(`Переход на страницу: ${num}`);
+        };
+      })(i)
+    );
+  }
+
+  return buttons;
+}
+
+Задание 10. 
+Значение `this` в обычной функции определяется в момент вызова: `obj.method()` вызывает метод с `this === obj`. Когда метод передаётся как ссылка и вызывается без точки, объект-владелец теряется, `this` становится `undefined` (в строгом режиме) или `window`. Поэтому `this.prefix` даёт `undefined`. Аргументом обработчика является сам объект события `MouseEvent`, он выводится как `[object MouseEvent]`.
+
+```js
+const btn = document.getElementById("checkout-btn");
+btn.addEventListener("click", analyticsTracker.sendEvent.bind(analyticsTracker));
+```
+
+```js
+const btn = document.getElementById("checkout-btn");
+btn.addEventListener("click", (event) => {
+  analyticsTracker.sendEvent(event.type);
+});
+```
+
+```js
+const analyticsTracker = {
+  prefix: "ANALYTICS_EVENT",
+  sendEvent: (eventName) => {
+    console.log(`[${analyticsTracker.prefix}]: ${eventName}`);
+  },
+};
+
+document.getElementById("checkout-btn").addEventListener("click", (event) => {
+  analyticsTracker.sendEvent(event.type);
+});
+```
+Задание 11. 
+Мутируют массив на месте (in-place): `sort`, `reverse`, `splice`, `push`, `pop`, `shift`, `unshift`, `copyWithin`, `fill`. Чистые методы возвращают новый массив, не меняя исходный: `map`, `filter`, `slice`, `concat`, `flat`, а также новые методы `toSorted`, `toReversed`, `toSpliced`. Поскольку `products` — это ссылка на массив состояния приложения, `sort` перемешивает исходный каталог.
+
+function getTopExpensiveProducts(products) {
+  return [...products].sort((a, b) => b.price - a.price).slice(0, 3);
+}
+
+Задание 12. `map` по смыслу задачи — «преобразовать каждый элемент в новый»: он возвращает массив той же длины без внешних переменных и ручного индексирования. В React функциональный стиль предпочтительнее: чистые функции предсказуемы, легко тестируются, не мутируют состояние, а декларативный код читается как описание результата, а не как список шагов.
+
+const mapIdsToTasks = (ids) => ids.map((id) => ({ taskId: id, isDone: false }));
+
+Задание 13. 
+`find` возвращает найденный элемент или `undefined`. Число `0` — falsy-значение, поэтому проверка `if (!targetCode)` ложно срабатывает и для валидного нуля. Нельзя проверять результат через отрицание: сначала нужно отличить «элемент найден» от «элемент не найден», сравнив с `undefined`.
+
+const exitCodes = [5, 8, 12, 0];
+
+const targetCode = exitCodes.find((code) => code === 0);
+
+if (targetCode === undefined) {
+  console.log("Код 0 не найден в списке!");
+} else {
+  console.log("Код успешно найден:", targetCode);
+}
+
+Задание 14. 
+Если `initialValue` не передан, `reduce` берёт первым аккумулятором первый элемент массива — то есть объект `{ id: 1, title: "Мышь", price: 2000 }`. На второй итерации выполняется `объект + 1000`: объект приводится к строке `[object Object]`, получается `"[object Object]1000"`. Начальное значение нужно всегда передавать явно.
+
+const cartItems = [
+  { id: 1, title: "Мышь", price: 2000 },
+  { id: 2, title: "Коврик", price: 1000 },
+];
+
+const totalCost = cartItems.reduce((acc, item) => acc + item.price, 0);
